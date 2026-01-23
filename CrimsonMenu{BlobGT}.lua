@@ -1,7 +1,4 @@
--- Crimson Menu - Top Tabs, Draggable, INS toggle, DEL unload
--- Recommended: LocalScript in StarterPlayerScripts
--- FIXED & IMPROVED VERSION - Everything should now work (Jan 2026)
-
+-- Script Made By CrimsonMenu!
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
@@ -828,4 +825,4 @@ end))
 -- Initial visibility (set to true to show on join)
 setMenuVisible(true)
 
-print("[Crimson Menu] Fully Loaded - All features active! Press INS to toggle menu")
+print("Crimson has loaded Enjoy ( PC ONLY! INS to open DEL to unload! ) ")
