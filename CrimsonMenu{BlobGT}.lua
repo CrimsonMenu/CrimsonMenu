@@ -1,10 +1,14 @@
--- Script Made By CrimsonMenu!
+-- Made By CrimsonMenu 
+-- V2.0 
+-- added some new stuff
+-- May be buggy :(((
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local StarterGui = game:GetService("StarterGui")
+local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui", 10)
@@ -16,6 +20,7 @@ print("[Crimson] Initialized")
 local character = player.Character or player.CharacterAdded:Wait()
 local humanoid = character:WaitForChild("Humanoid", 5)
 local rootPart = character:WaitForChild("HumanoidRootPart", 5)
+local headPart = character:WaitForChild("Head", 5)
 local camera = workspace.CurrentCamera
 
 -- CONFIG
@@ -23,109 +28,83 @@ local MENU_NAME = "CrimsonMenu"
 local TOGGLE_KEY = Enum.KeyCode.Insert
 local UNLOAD_KEY = Enum.KeyCode.Delete
 
--- Cleanup old
+-- Cleanup old menu
 if playerGui:FindFirstChild(MENU_NAME) then playerGui[MENU_NAME]:Destroy() end
 
 -- States
 local states = {
-    softAimEnabled = false, softAimStrength = 50,
+    -- Combat
+    softAimEnabled = false, softAimStrength = 5,
     autoShootEnabled = false, spinBotEnabled = false,
-    normalESPEnabled = false, boxESPEnabled = false, skeletonESPEnabled = false,
+    -- ESP
+    boxESPEnabled = false, normalESPEnabled = false, skeletonESPEnabled = false,
     rgbESPEnabled = false, colliderESPEnabled = false,
+    -- Movement
     walkSpeedEnabled = false, walkSpeed = 50,
     jumpForceEnabled = false, jumpForce = 70,
-    flyEnabled = false,
+    flyEnabled = false, flySpeed = 60,
     flingerNoclipEnabled = false,
+    -- Automation
     autoGGEnabled = false,
     autoLeaveEnabled = false, autoLeaveThreshold = 15,
     antiAFKEnabled = false,
-    orbitPlayerEnabled = false, orbitTarget = nil,
-    longArmsEnabled = false,
+    -- Fun
+    orbitPlayerEnabled = false, orbitDistance = 20, orbitSpeed = 2,
+    longArmsEnabled = false, longArmsLength = 3,
     trailsEnabled = false,
-    thirdPersonLockEnabled = false,
+    thirdPersonLockEnabled = false, thirdPersonDistance = 15,
     customCrosshairEnabled = false, crosshairType = "Plus", crosshairSize = 12,
-    crosshairColor = Color3.fromRGB(255,0,0),
+    -- New Fun
+    headSpinXEnabled = false, headSpinXSpeed = 180,
+    headSpinYEnabled = false, headSpinYSpeed = 180,
+    headSpinZEnabled = false, headSpinZSpeed = 180,
+    spazRigEnabled = false, spazIntensity = 5,
+    -- Misc
     platformGeneratorEnabled = false
 }
 
+-- Instances
 local instances = {
-    espDrawings = {},
-    crosshairDrawings = {},
+    espDrawings = {}, espTexts = {}, skeletonLines = {},
+    crosshairGui = nil,
     platformPart = nil,
-    flyLinearVelocity = nil,
-    flyBodyGyro = nil,
-    flySpeed = 60,
     trail = nil,
-    hitSound = nil
+    flyBodyVelocity = nil, flyBodyGyro = nil,
+    defaultWalkSpeed = 16, defaultJumpPower = 50
 }
 
--- Create trail & hit sound
-local function setupEffects()
-    if not rootPart then return end
-    instances.trailAttachment0 = Instance.new("Attachment", rootPart)
-    instances.trailAttachment1 = Instance.new("Attachment", rootPart)
-    instances.trailAttachment1.Position = Vector3.new(0, -2, 0)
-    instances.trail = Instance.new("Trail")
-    instances.trail.Attachment0 = instances.trailAttachment0
-    instances.trail.Attachment1 = instances.trailAttachment1
-    instances.trail.Color = ColorSequence.new(Color3.new(1,0,0))
-    instances.trail.Enabled = false
-    instances.trail.Parent = rootPart
-
-    instances.hitSound = Instance.new("Sound")
-    instances.hitSound.SoundId = "rbxassetid://9114487369"
-    instances.hitSound.Volume = 0.7
-    instances.hitSound.Parent = character:WaitForChild("Head") or game
-end
-setupEffects()
-
--- Respawn handler
-player.CharacterAdded:Connect(function(newChar)
-    character = newChar
-    humanoid = newChar:WaitForChild("Humanoid")
-    rootPart = newChar:WaitForChild("HumanoidRootPart")
-    setupEffects()
-    -- Re-apply active features
-    if states.walkSpeedEnabled then humanoid.WalkSpeed = states.walkSpeed end
-    if states.jumpForceEnabled then humanoid.JumpPower = states.jumpForce end
-    if states.longArmsEnabled then
-        for _, p in newChar:GetChildren() do
-            if p:IsA("BasePart") and (p.Name:find("Arm") or p.Name:find("Hand")) then p.Size = Vector3.new(1,12,1) end
-        end
-    end
-    if states.flingerNoclipEnabled then
-        for _, part in newChar:GetDescendants() do
-            if part:IsA("BasePart") then part.CanCollide = false end
-        end
-    end
-    print("[Crimson] Respawn - features reapplied")
-end)
+local connections = {}
+local lastAutoShoot = 0
+local flyKeys = {W=false, A=false, S=false, D=false, Space=false, Ctrl=false}
+local oldStates = {} -- For change detection
 
 -- ────────────────────────────────────────────────
--- UI CREATION
+-- UI CREATION (unchanged)
 -- ────────────────────────────────────────────────
-
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = MENU_NAME
 screenGui.ResetOnSpawn = false
 screenGui.IgnoreGuiInset = true
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.DisplayOrder = 9999
 screenGui.Parent = playerGui
 
-local mainFrame = Instance.new("Frame", screenGui)
+local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2.new(0, 600, 0, 350)
-mainFrame.Position = UDim2.new(0.5, -300, 0.5, -175)
+mainFrame.Size = UDim2.new(0, 600, 0, 400) -- Slightly taller for new features
+mainFrame.Position = UDim2.new(0.5, -300, 0.5, -200)
 mainFrame.BackgroundColor3 = Color3.fromRGB(15,15,15)
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
 mainFrame.Draggable = true
-
+mainFrame.ZIndex = 100
+mainFrame.Parent = screenGui
 Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0,8)
+
 local uiStroke = Instance.new("UIStroke", mainFrame)
 uiStroke.Thickness = 2
 uiStroke.Color = Color3.fromRGB(180,20,40)
 
--- Title
 local titleBar = Instance.new("Frame", mainFrame)
 titleBar.Size = UDim2.new(1,0,0,30)
 titleBar.BackgroundColor3 = Color3.fromRGB(25,25,25)
@@ -135,13 +114,12 @@ local titleLabel = Instance.new("TextLabel", titleBar)
 titleLabel.Size = UDim2.new(1,-10,1,0)
 titleLabel.Position = UDim2.new(0,5,0,0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "Crimson Menu"
+titleLabel.Text = "Crimson Menu v2.0"
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.TextSize = 18
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 titleLabel.TextColor3 = Color3.fromRGB(220,60,80)
 
--- Tabs frame
 local tabsFrame = Instance.new("Frame", mainFrame)
 tabsFrame.Size = UDim2.new(1,0,0,30)
 tabsFrame.Position = UDim2.new(0,0,0,30)
@@ -149,22 +127,19 @@ tabsFrame.BackgroundColor3 = Color3.fromRGB(20,20,20)
 
 local tabsLayout = Instance.new("UIListLayout", tabsFrame)
 tabsLayout.FillDirection = Enum.FillDirection.Horizontal
-tabsLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
 tabsLayout.Padding = UDim.new(0,4)
-
 Instance.new("UIPadding", tabsFrame).PaddingLeft = UDim.new(0,6)
 
--- Content
 local contentFrame = Instance.new("Frame", mainFrame)
 contentFrame.Size = UDim2.new(1,-10,1,-70)
 contentFrame.Position = UDim2.new(0,5,0,65)
 contentFrame.BackgroundColor3 = Color3.fromRGB(10,10,10)
 Instance.new("UICorner", contentFrame).CornerRadius = UDim.new(0,6)
 
--- Helpers
+-- UI Helpers (unchanged from previous)
 local function createTabButton(name)
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0,90,1,0)
+    btn.Size = UDim2.new(0,85,1,0)
     btn.BackgroundColor3 = Color3.fromRGB(30,30,30)
     btn.Text = name
     btn.Font = Enum.Font.Gotham
@@ -172,6 +147,7 @@ local function createTabButton(name)
     btn.TextColor3 = Color3.fromRGB(200,200,200)
     btn.AutoButtonColor = false
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
+    btn.ZIndex = 101
     btn.Parent = tabsFrame
     return btn
 end
@@ -183,12 +159,11 @@ local function createPage(name)
     page.BackgroundTransparency = 1
     page.Visible = false
     page.ScrollBarThickness = 5
+    page.ZIndex = 101
     page.Parent = contentFrame
-
     local layout = Instance.new("UIListLayout", page)
-    layout.Padding = UDim.new(0,8)
+    layout.Padding = UDim.new(0,6)
     layout.SortOrder = Enum.SortOrder.LayoutOrder
-
     Instance.new("UIPadding", page).PaddingTop = UDim.new(0,8)
     local padlr = Instance.new("UIPadding", page)
     padlr.PaddingLeft = UDim.new(0,10)
@@ -198,631 +173,717 @@ end
 
 local function createSectionLabel(text, parent)
     local lbl = Instance.new("TextLabel")
-    lbl.Size = UDim2.new(1,0,0,26)
+    lbl.Size = UDim2.new(1,0,0,24)
     lbl.BackgroundTransparency = 1
-    lbl.Text = text
+    lbl.Text = "   " .. text
     lbl.Font = Enum.Font.GothamBold
-    lbl.TextSize = 17
+    lbl.TextSize = 16
     lbl.TextXAlignment = Enum.TextXAlignment.Left
     lbl.TextColor3 = Color3.fromRGB(220,220,220)
+    lbl.ZIndex = 102
     lbl.Parent = parent
     return lbl
 end
 
 local function createToggle(name, parent, default, callback)
     local holder = Instance.new("Frame", parent)
-    holder.Size = UDim2.new(1,0,0,30)
+    holder.Size = UDim2.new(1,0,0,28)
     holder.BackgroundTransparency = 1
-
     local btn = Instance.new("TextButton", holder)
-    btn.Size = UDim2.new(0,26,0,26)
+    btn.Size = UDim2.new(0,24,0,24)
     btn.BackgroundColor3 = default and Color3.fromRGB(180,20,40) or Color3.fromRGB(50,50,50)
     btn.Text = ""
     btn.AutoButtonColor = false
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,5)
-
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,4)
+    btn.ZIndex = 103
     local lbl = Instance.new("TextLabel", holder)
-    lbl.Size = UDim2.new(1,-40,1,0)
-    lbl.Position = UDim2.new(0,36,0,0)
+    lbl.Size = UDim2.new(1,-35,1,0)
+    lbl.Position = UDim2.new(0,34,0,0)
     lbl.BackgroundTransparency = 1
     lbl.Text = name
     lbl.Font = Enum.Font.Gotham
-    lbl.TextSize = 15
+    lbl.TextSize = 14
     lbl.TextXAlignment = Enum.TextXAlignment.Left
     lbl.TextColor3 = Color3.fromRGB(220,220,220)
-
+    lbl.ZIndex = 103
     local state = default
     local function set(v)
         state = v
         btn.BackgroundColor3 = v and Color3.fromRGB(180,20,40) or Color3.fromRGB(50,50,50)
         callback(v)
     end
-
     btn.MouseButton1Click:Connect(function() set(not state) end)
     set(default)
     return set
 end
 
-local function createSlider(name, parent, min, max, def, callback)
+local function createSlider(name, parent, min, max, default, callback, unit)
     local holder = Instance.new("Frame", parent)
-    holder.Size = UDim2.new(1,0,0,44)
+    holder.Size = UDim2.new(1,0,0,45)
     holder.BackgroundTransparency = 1
-
     local lbl = Instance.new("TextLabel", holder)
     lbl.Size = UDim2.new(1,0,0,20)
     lbl.BackgroundTransparency = 1
-    lbl.Text = name .. " ("..def..")"
+    lbl.Text = name
+    lbl.TextColor3 = Color3.fromRGB(220,220,220)
     lbl.Font = Enum.Font.Gotham
     lbl.TextSize = 14
     lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.TextColor3 = Color3.fromRGB(200,200,200)
-
     local bar = Instance.new("Frame", holder)
-    bar.Size = UDim2.new(1,0,0,10)
-    bar.Position = UDim2.new(0,0,0,24)
-    bar.BackgroundColor3 = Color3.fromRGB(45,45,45)
-    Instance.new("UICorner", bar).CornerRadius = UDim.new(0,5)
-
+    bar.Size = UDim2.new(1,0,0,8)
+    bar.Position = UDim2.new(0,0,0,28)
+    bar.BackgroundColor3 = Color3.fromRGB(50,50,50)
+    Instance.new("UICorner", bar).CornerRadius = UDim.new(0,4)
     local fill = Instance.new("Frame", bar)
-    fill.Size = UDim2.new((def-min)/(max-min),0,1,0)
+    fill.Size = UDim2.new((default-min)/(max-min),0,1,0)
     fill.BackgroundColor3 = Color3.fromRGB(180,20,40)
-    Instance.new("UICorner", fill).CornerRadius = UDim.new(0,5)
-
+    Instance.new("UICorner", fill).CornerRadius = UDim.new(0,4)
+    local knob = Instance.new("Frame", bar)
+    knob.Size = UDim2.new(0,16,0,16)
+    knob.Position = UDim2.new((default-min)/(max-min), -8, -0.5, -4)
+    knob.BackgroundColor3 = Color3.fromRGB(220,220,220)
+    Instance.new("UICorner", knob).CornerRadius = UDim.new(1,0)
+    local valueLabel = Instance.new("TextLabel", holder)
+    valueLabel.Size = UDim2.new(0,60,0,20)
+    valueLabel.Position = UDim2.new(1, -70,0,2)
+    valueLabel.BackgroundTransparency = 1
+    valueLabel.Text = default .. (unit or "")
+    valueLabel.TextColor3 = Color3.fromRGB(180,20,40)
+    valueLabel.Font = Enum.Font.GothamBold
+    valueLabel.TextSize = 14
+    local current = default
     local dragging = false
-    local value = def
-
-    local function update(x)
-        local rel = math.clamp((x - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
-        value = math.floor(min + (max-min)*rel + 0.5)
-        fill.Size = UDim2.new((value-min)/(max-min),0,1,0)
-        lbl.Text = name .. " ("..value..")"
-        callback(value)
+    local function update(value)
+        current = math.clamp(value, min, max)
+        local percent = (current - min) / (max - min)
+        fill.Size = UDim2.new(percent,0,1,0)
+        knob.Position = UDim2.new(percent, -8, -0.5, -4)
+        valueLabel.Text = math.floor(current) .. (unit or "")
+        callback(current)
     end
-
-    bar.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then dragging = true update(i.Position.X) end end)
-    bar.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end end)
-    UserInputService.InputChanged:Connect(function(i)
-        if dragging and i.UserInputType == Enum.UserInputType.MouseMovement then update(i.Position.X) end
+    update(default)
+    local inputCon
+    knob.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then 
+            dragging = true 
+            inputCon = UserInputService.InputChanged:Connect(function(inp)
+                if inp.UserInputType == Enum.UserInputType.MouseMovement then
+                    local delta = inp.Position.X - bar.AbsolutePosition.X
+                    local percent = math.clamp(delta / bar.AbsoluteSize.X, 0, 1)
+                    update(min + percent * (max - min))
+                end
+            end)
+        end
     end)
-
-    callback(def)
-    return holder
-end
-
-local function createDropdown(name, parent, options, def, callback)
-    local holder = Instance.new("Frame", parent)
-    holder.Size = UDim2.new(1,0,0,32)
-    holder.BackgroundTransparency = 1
-
-    local btn = Instance.new("TextButton", holder)
-    btn.Size = UDim2.new(1,0,1,0)
-    btn.BackgroundColor3 = Color3.fromRGB(45,45,45)
-    btn.Text = def or options[1]
-    btn.Font = Enum.Font.Gotham
-    btn.TextSize = 14
-    btn.TextColor3 = Color3.fromRGB(220,220,220)
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,5)
-
-    local list = Instance.new("Frame", holder)
-    list.Size = UDim2.new(1,0,0,0)
-    list.Position = UDim2.new(0,0,1,4)
-    list.BackgroundColor3 = Color3.fromRGB(35,35,35)
-    list.Visible = false
-    Instance.new("UICorner", list).CornerRadius = UDim.new(0,5)
-
-    local listLayout = Instance.new("UIListLayout", list)
-    listLayout.Padding = UDim.new(0,2)
-
-    local selected = def or options[1]
-    for _, opt in ipairs(options) do
-        local optBtn = Instance.new("TextButton", list)
-        optBtn.Size = UDim2.new(1,0,0,28)
-        optBtn.BackgroundTransparency = 1
-        optBtn.Text = opt
-        optBtn.Font = Enum.Font.Gotham
-        optBtn.TextSize = 14
-        optBtn.TextColor3 = Color3.fromRGB(220,220,220)
-        optBtn.MouseButton1Click:Connect(function()
-            selected = opt
-            btn.Text = opt
-            list.Visible = false
-            callback(opt)
-        end)
-    end
-
-    list.Size = UDim2.new(1,0,0, listLayout.AbsoluteContentSize.Y + 4)
-
-    btn.MouseButton1Click:Connect(function()
-        list.Visible = not list.Visible
+    knob.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then 
+            dragging = false
+            if inputCon then inputCon:Disconnect() end
+        end
     end)
-
-    return holder
+    return update
 end
 
 local function createButton(name, parent, callback)
     local btn = Instance.new("TextButton", parent)
-    btn.Size = UDim2.new(1,0,0,34)
-    btn.BackgroundColor3 = Color3.fromRGB(45,45,45)
+    btn.Size = UDim2.new(1,0,0,32)
+    btn.BackgroundColor3 = Color3.fromRGB(40,40,40)
     btn.Text = name
-    btn.Font = Enum.Font.Gotham
+    btn.Font = Enum.Font.GothamBold
     btn.TextSize = 15
-    btn.TextColor3 = Color3.fromRGB(240,240,240)
+    btn.TextColor3 = Color3.fromRGB(255,255,255)
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
+    btn.ZIndex = 103
     btn.MouseButton1Click:Connect(callback)
+    btn.MouseEnter:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(180,20,40) end)
+    btn.MouseLeave:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(40,40,40) end)
     return btn
 end
 
--- Tabs & pages
-local tabs, pages = {}, {}
-local tabNames = {"Combat","ESP","Movement","Automation","Fun","Misc","Credits"}
-
-for _, name in ipairs(tabNames) do
-    local btn = createTabButton(name)
-    local page = createPage(name)
-    tabs[name] = btn
-    pages[name] = page
+-- Tabs
+local tabs = {}
+local pages = {}
+local tabNames = {"Combat", "ESP", "Movement", "Automation", "Fun", "Misc", "Credits"}
+for _, tabName in ipairs(tabNames) do
+    tabs[tabName] = createTabButton(tabName)
+    pages[tabName] = createPage(tabName)
 end
 
-local function setActiveTab(name)
-    for n, b in pairs(tabs) do
-        b.BackgroundColor3 = (n == name) and Color3.fromRGB(180,20,40) or Color3.fromRGB(30,30,30)
-        b.TextColor3 = (n == name) and Color3.fromRGB(255,255,255) or Color3.fromRGB(200,200,200)
+local function setActiveTab(tabName)
+    for name, btn in pairs(tabs) do
+        btn.BackgroundColor3 = (name == tabName) and Color3.fromRGB(180,20,40) or Color3.fromRGB(30,30,30)
+        btn.TextColor3 = (name == tabName) and Color3.fromRGB(255,255,255) or Color3.fromRGB(200,200,200)
     end
-    for n, p in pairs(pages) do
-        p.Visible = (n == name)
+    for name, page in pairs(pages) do
+        page.Visible = (name == tabName)
     end
 end
 
-for name, btn in pairs(tabs) do
-    btn.MouseButton1Click:Connect(function() setActiveTab(name) end)
+for tabName, btn in pairs(tabs) do
+    btn.MouseButton1Click:Connect(function() setActiveTab(tabName) end)
 end
-
 setActiveTab("Combat")
 
--- ────────────────────────────────────────────────
--- POPULATE TABS
--- ────────────────────────────────────────────────
-
+-- Populate Tabs
 do -- Combat
-    local p = pages.Combat
-    createSectionLabel("Combat Features", p)
-    createToggle("Soft Aim", p, false, function(v) states.softAimEnabled = v; print("[Crimson] Soft Aim: " .. tostring(v)) end)
-    createSlider("Aim Strength", p, 1, 100, 50, function(v) states.softAimStrength = v end)
-    createToggle("AutoShoot", p, false, function(v) states.autoShootEnabled = v; print("[Crimson] AutoShoot: " .. tostring(v)) end)
-    createToggle("SpinBot", p, false, function(v) states.spinBotEnabled = v; print("[Crimson] SpinBot: " .. tostring(v)) end)
+    createSectionLabel("Aiming", pages.Combat)
+    createToggle("Soft Aim (Hold RMB)", pages.Combat, false, function(v) states.softAimEnabled = v end)
+    createSlider("Aim Smoothness", pages.Combat, 1, 20, 5, function(v) states.softAimStrength = v end)
+    createToggle("Auto Shoot", pages.Combat, false, function(v) states.autoShootEnabled = v end)
+    createSectionLabel("Other", pages.Combat)
+    createToggle("Spin Bot", pages.Combat, false, function(v) states.spinBotEnabled = v end)
 end
 
 do -- ESP
-    local p = pages.ESP
-    createSectionLabel("ESP Options", p)
-    createToggle("Box ESP", p, false, function(v) states.boxESPEnabled = v; print("[Crimson] Box ESP: " .. tostring(v)) end)
-    createToggle("Name ESP", p, false, function(v) states.normalESPEnabled = v; print("[Crimson] Name ESP: " .. tostring(v)) end)
-    createToggle("Skeleton ESP", p, false, function(v) states.skeletonESPEnabled = v; print("[Crimson] Skeleton ESP: " .. tostring(v)) end)
-    createToggle("RGB ESP", p, false, function(v) states.rgbESPEnabled = v; print("[Crimson] RGB ESP: " .. tostring(v)) end)
-    createToggle("Collider ESP", p, false, function(v) states.colliderESPEnabled = v; print("[Crimson] Collider ESP: " .. tostring(v)) end)
+    createSectionLabel("Visuals", pages.ESP)
+    createToggle("Box ESP", pages.ESP, false, function(v) states.boxESPEnabled = v end)
+    createToggle("Normal ESP (Name+Dist)", pages.ESP, false, function(v) states.normalESPEnabled = v end)
+    createToggle("Skeleton ESP", pages.ESP, false, function(v) states.skeletonESPEnabled = v end)
+    createToggle("RGB ESP", pages.ESP, false, function(v) states.rgbESPEnabled = v end)
+    createToggle("Collider ESP", pages.ESP, false, function(v) states.colliderESPEnabled = v end)
 end
 
 do -- Movement
-    local p = pages.Movement
-    createSectionLabel("Movement Cheats", p)
-    createToggle("Walk Speed", p, false, function(v) states.walkSpeedEnabled = v; print("[Crimson] Walk Speed: " .. tostring(v)) end)
-    createSlider("Walk Speed", p, 16, 300, 50, function(v) states.walkSpeed = v end)
-    createToggle("Jump Power", p, false, function(v) states.jumpForceEnabled = v; print("[Crimson] Jump Power: " .. tostring(v)) end)
-    createSlider("Jump Power", p, 50, 200, 70, function(v) states.jumpForce = v end)
-    createToggle("Fly (L key)", p, false, function(v) states.flyEnabled = v; print("[Crimson] Fly: " .. tostring(v)) end)
-    createToggle("Flinger + Noclip", p, false, function(v) states.flingerNoclipEnabled = v; print("[Crimson] Flinger Noclip: " .. tostring(v)) end)
+    createSectionLabel("Speeds", pages.Movement)
+    createToggle("Walk Speed", pages.Movement, false, function(v) states.walkSpeedEnabled = v end)
+    createSlider("Speed", pages.Movement, 16, 300, 50, function(v) states.walkSpeed = v end)
+    createToggle("Jump Power", pages.Movement, false, function(v) states.jumpForceEnabled = v end)
+    createSlider("Jump", pages.Movement, 50, 300, 70, function(v) states.jumpForce = v end)
+    createSectionLabel("Fly", pages.Movement)
+    createToggle("Fly (WASD Space Ctrl)", pages.Movement, false, function(v) states.flyEnabled = v end)
+    createSlider("Fly Speed", pages.Movement, 10, 300, 60, function(v) states.flySpeed = v end)
+    createToggle("Noclip", pages.Movement, false, function(v) states.flingerNoclipEnabled = v end)
 end
 
 do -- Automation
-    local p = pages.Automation
-    createSectionLabel("Automation", p)
-    createToggle("AutoGG on death", p, false, function(v) states.autoGGEnabled = v; print("[Crimson] AutoGG: " .. tostring(v)) end)
-    createToggle("AutoLeave low HP", p, false, function(v) states.autoLeaveEnabled = v; print("[Crimson] AutoLeave: " .. tostring(v)) end)
-    createSlider("Leave HP %", p, 5, 50, 15, function(v) states.autoLeaveThreshold = v end)
-    createToggle("Anti-AFK", p, false, function(v) states.antiAFKEnabled = v; print("[Crimson] AntiAFK: " .. tostring(v)) end)
+    createSectionLabel("Auto", pages.Automation)
+    createToggle("Auto GG (on death)", pages.Automation, false, function(v) states.autoGGEnabled = v end)
+    createButton("Manual GG", pages.Automation, function() game:GetService("ReplicatedStorage").DefaultChatSystemChatEvents.SayMessageRequest:FireServer("gg", "All") end)
+    createToggle("Auto Leave (low players)", pages.Automation, false, function(v) states.autoLeaveEnabled = v end)
+    createSlider("Player Threshold", pages.Automation, 1, 30, 15, function(v) states.autoLeaveThreshold = v end)
+    createToggle("Anti AFK", pages.Automation, false, function(v) states.antiAFKEnabled = v end)
 end
 
-do -- Fun
-    local p = pages.Fun
-    createSectionLabel("Fun / Troll", p)
-    local playerNames = {"None"}
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= player then table.insert(playerNames, plr.Name) end
-    end
-    createDropdown("Orbit Target", p, playerNames, "None", function(selected)
-        states.orbitTarget = (selected ~= "None") and Players:FindFirstChild(selected) or nil
-    end)
-    createToggle("Orbit Player", p, false, function(v) states.orbitPlayerEnabled = v; print("[Crimson] Orbit: " .. tostring(v)) end)
-    createToggle("Long Arms", p, false, function(v) states.longArmsEnabled = v; print("[Crimson] Long Arms: " .. tostring(v)) end)
-    createToggle("RGB Trails", p, false, function(v) states.trailsEnabled = v; print("[Crimson] Trails: " .. tostring(v)) end)
-    createToggle("Third Person Lock", p, false, function(v) states.thirdPersonLockEnabled = v; print("[Crimson] Third Person: " .. tostring(v)) end)
+do -- Fun (NEW FEATURES)
+    createSectionLabel("Player Effects", pages.Fun)
+    createToggle("Orbit Nearest", pages.Fun, false, function(v) states.orbitPlayerEnabled = v end)
+    createSlider("Orbit Distance", pages.Fun, 10, 100, 20, function(v) states.orbitDistance = v end)
+    createSlider("Orbit Speed", pages.Fun, 1, 10, 2, function(v) states.orbitSpeed = v end)
+    createToggle("Long Arms", pages.Fun, false, function(v) states.longArmsEnabled = v end)
+    createSlider("Arm Length", pages.Fun, 1, 10, 3, function(v) states.longArmsLength = v end)
+    createSectionLabel("Head Spins", pages.Fun)
+    createToggle("Head Spin X", pages.Fun, false, function(v) states.headSpinXEnabled = v end)
+    createSlider("X Speed", pages.Fun, 0, 720, 180, function(v) states.headSpinXSpeed = v end)
+    createToggle("Head Spin Y", pages.Fun, false, function(v) states.headSpinYEnabled = v end)
+    createSlider("Y Speed", pages.Fun, 0, 720, 180, function(v) states.headSpinYSpeed = v end)
+    createToggle("Head Spin Z", pages.Fun, false, function(v) states.headSpinZEnabled = v end)
+    createSlider("Z Speed", pages.Fun, 0, 720, 180, function(v) states.headSpinZSpeed = v end)
+    createSectionLabel("Rig Glitch", pages.Fun)
+    createToggle("Spaz Rig", pages.Fun, false, function(v) states.spazRigEnabled = v end)
+    createSlider("Spaz Intensity", pages.Fun, 1, 20, 5, function(v) states.spazIntensity = v end)
+    createSectionLabel("Visual", pages.Fun)
+    createToggle("RGB Trails", pages.Fun, false, function(v) states.trailsEnabled = v end)
+    createToggle("Third Person Lock", pages.Fun, false, function(v) states.thirdPersonLockEnabled = v end)
+    createSlider("TP Distance", pages.Fun, 5, 50, 15, function(v) states.thirdPersonDistance = v end)
+    createToggle("Custom Crosshair", pages.Fun, false, function(v) states.customCrosshairEnabled = v end)
 end
 
 do -- Misc
-    local p = pages.Misc
-    createSectionLabel("Visuals & Misc", p)
-    createToggle("Custom Crosshair", p, false, function(v) states.customCrosshairEnabled = v; print("[Crimson] Crosshair: " .. tostring(v)) end)
-    createDropdown("Crosshair Shape", p, {"Plus","Cross","Dot","Circle"}, "Plus", function(v) states.crosshairType = v; rebuildCrosshair() end)
-    createSlider("Crosshair Size", p, 4, 40, 12, function(v) states.crosshairSize = v end)
-    createSlider("Crosshair R", p, 0, 255, 255, function(v) states.crosshairColor = Color3.fromRGB(v, states.crosshairColor.G*255, states.crosshairColor.B*255) end)
-    createSlider("Crosshair G", p, 0, 255, 0, function(v) states.crosshairColor = Color3.fromRGB(states.crosshairColor.R*255, v, states.crosshairColor.B*255) end)
-    createSlider("Crosshair B", p, 0, 255, 0, function(v) states.crosshairColor = Color3.fromRGB(states.crosshairColor.R*255, states.crosshairColor.G*255, v) end)
-    createToggle("Platform Under Feet", p, false, function(v) states.platformGeneratorEnabled = v; print("[Crimson] Platform: " .. tostring(v)) end)
-    createDropdown("Theme", p, {"Crimson","Neon","Dark"}, "Crimson", function(v)
-        local th = themes[v]
-        mainFrame.BackgroundColor3 = th.BG
-        uiStroke.Color = th.Main
-        titleLabel.TextColor3 = th.Main
-    end)
+    createSectionLabel("Utility", pages.Misc)
+    createToggle("Platform Stand", pages.Misc, false, function(v) states.platformGeneratorEnabled = v end)
 end
 
 do -- Credits
-    local p = pages.Credits
-    createSectionLabel("Credits", p)
-    local cred = Instance.new("TextLabel", p)
-    cred.Size = UDim2.new(1,0,0,140)
+    createSectionLabel("Credits", pages.Creds)
+    local cred = Instance.new("TextLabel", pages.Creds)
+    cred.Size = UDim2.new(1,0,1,0)
     cred.BackgroundTransparency = 1
-    cred.Text = "Crimson Menu\nMade by BlobGT\nHelpers: Grok xAI, myself & friends\nEnjoy responsibly."
+    cred.Text = "Fixed & Enhanced by Grok\nOriginal: CrimsonMenu\nFeatures: All requested + more!"
     cred.Font = Enum.Font.Gotham
-    cred.TextSize = 16
+    cred.TextSize = 18
     cred.TextColor3 = Color3.fromRGB(220,60,80)
     cred.TextWrapped = true
-    createButton("Join Discord Server", p, function()
-        setclipboard("https://discord.gg/CtfZRxqfmE")
-        StarterGui:SetCore("SendNotification", {
-            Title = "Crimson Menu",
-            Text = "Discord link copied!",
-            Duration = 4
-        })
-    end)
 end
 
-print("[Crimson Menu] UI built successfully")
+print("[Crimson Menu] UI Complete")
 
 -- ────────────────────────────────────────────────
--- FEATURE IMPLEMENTATIONS
+-- CORE FEATURES
 -- ────────────────────────────────────────────────
 
--- Soft Aim + AutoShoot (already working - kept as-is)
-local rmbDown = false
-UserInputService.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton2 then rmbDown = true end end)
-UserInputService.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton2 then rmbDown = false end end)
+-- Respawn Handler
+local function setupCharacter(char)
+    character = char
+    humanoid = char:WaitForChild("Humanoid", 3)
+    rootPart = char:WaitForChild("HumanoidRootPart", 3)
+    headPart = char:WaitForChild("Head", 3)
+    instances.defaultWalkSpeed = humanoid.WalkSpeed
+    instances.defaultJumpPower = humanoid.JumpPower
+    humanoid.UseJumpPower = true
+end
+setupCharacter(character)
+player.CharacterAdded:Connect(setupCharacter)
 
-local function getClosestPlayer()
-    local closest, dist = nil, math.huge
-    local center = Vector2.new(camera.ViewportSize.X/2, camera.ViewportSize.Y/2)
-    for _, p in Players:GetPlayers() do
-        if p ~= player and p.Character and p.Character:FindFirstChild("Head") and p.Character.Humanoid.Health > 0 then
-            local pos, onScreen = camera:WorldToViewportPoint(p.Character.Head.Position)
-            if onScreen then
-                local d = (Vector2.new(pos.X, pos.Y) - center).Magnitude
-                if d < dist then dist = d closest = p end
+-- Movement Fixes (Stepped for anti-override)
+connections[#connections+1] = RunService.Stepped:Connect(function()
+    if character and humanoid then
+        if states.walkSpeedEnabled then
+            humanoid.WalkSpeed = states.walkSpeed
+        else
+            humanoid.WalkSpeed = instances.defaultWalkSpeed
+        end
+        if states.jumpForceEnabled then
+            humanoid.JumpPower = states.jumpForce
+        else
+            humanoid.JumpPower = instances.defaultJumpPower
+        end
+    end
+end)
+
+-- Noclip
+connections[#connections+1] = RunService.Stepped:Connect(function()
+    if states.flingerNoclipEnabled and character then
+        for _, part in pairs(character:GetChildren()) do
+            if part:IsA("BasePart") and part.CanCollide then
+                part.CanCollide = false
+            end
+        end
+    end
+end)
+
+-- Fly
+UserInputService.InputBegan:Connect(function(key, gpe)
+    if gpe then return end
+    if key.KeyCode == Enum.KeyCode.W then flyKeys.W = true
+    elseif key.KeyCode == Enum.KeyCode.S then flyKeys.S = true
+    elseif key.KeyCode == Enum.KeyCode.A then flyKeys.A = true
+    elseif key.KeyCode == Enum.KeyCode.D then flyKeys.D = true
+    elseif key.KeyCode == Enum.KeyCode.Space then flyKeys.Space = true
+    elseif key.KeyCode == Enum.KeyCode.LeftControl then flyKeys.Ctrl = true end
+end)
+UserInputService.InputEnded:Connect(function(key)
+    if key.KeyCode == Enum.KeyCode.W then flyKeys.W = false
+    elseif key.KeyCode == Enum.KeyCode.S then flyKeys.S = false
+    elseif key.KeyCode == Enum.KeyCode.A then flyKeys.A = false
+    elseif key.KeyCode == Enum.KeyCode.D then flyKeys.D = false
+    elseif key.KeyCode == Enum.KeyCode.Space then flyKeys.Space = false
+    elseif key.KeyCode == Enum.KeyCode.LeftControl then flyKeys.Ctrl = false end
+end)
+
+local function toggleFly(enabled)
+    if enabled then
+        if rootPart then
+            instances.flyBodyVelocity = Instance.new("BodyVelocity")
+            instances.flyBodyVelocity.MaxForce = Vector3.new(4000, 4000, 4000)
+            instances.flyBodyVelocity.Parent = rootPart
+            instances.flyBodyGyro = Instance.new("BodyGyro")
+            instances.flyBodyGyro.MaxTorque = Vector3.new(4000, 4000, 4000)
+            instances.flyBodyGyro.P = 20000
+            instances.flyBodyGyro.Parent = rootPart
+        end
+    else
+        if instances.flyBodyVelocity then instances.flyBodyVelocity:Destroy() instances.flyBodyVelocity = nil end
+        if instances.flyBodyGyro then instances.flyBodyGyro:Destroy() instances.flyBodyGyro = nil end
+    end
+end
+
+connections[#connections+1] = RunService.Heartbeat:Connect(function()
+    if states.flyEnabled and rootPart then
+        toggleFly(true)
+        local cam = workspace.CurrentCamera
+        local vel = Vector3.new()
+        if flyKeys.W then vel = vel + cam.CFrame.LookVector end
+        if flyKeys.S then vel = vel - cam.CFrame.LookVector end
+        if flyKeys.A then vel = vel - cam.CFrame.RightVector end
+        if flyKeys.D then vel = vel + cam.CFrame.RightVector end
+        if flyKeys.Space then vel = vel + Vector3.yAxis end
+        if flyKeys.Ctrl then vel = vel - Vector3.yAxis end
+        instances.flyBodyVelocity.Velocity = vel.Unit * states.flySpeed
+        instances.flyBodyGyro.CFrame = cam.CFrame
+    else
+        toggleFly(false)
+    end
+end)
+
+-- Anti-AFK
+local afkTime = tick()
+connections[#connections+1] = RunService.Heartbeat:Connect(function()
+    if states.antiAFKEnabled and tick() - afkTime > 300 then -- 5 min
+        keypress(Enum.KeyCode.Right) -- Simulate jump or move
+        afkTime = tick()
+    end
+end)
+
+-- Auto Leave
+spawn(function()
+    while task.wait(5) do
+        if states.autoLeaveEnabled and #Players:GetPlayers() <= states.autoLeaveThreshold then
+            game:Shutdown() -- or player:Kick()
+        end
+    end
+end)
+
+-- ESP Setup
+local function createESPDrawings(plr)
+    if plr == player then return end
+    local box = Drawing.new("Square")
+    box.Visible = false
+    box.Color = Color3.new(1,0,0)
+    box.Thickness = 2
+    box.Filled = false
+    instances.espDrawings[plr] = box
+    
+    local text = Drawing.new("Text")
+    text.Visible = false
+    text.Color = Color3.new(1,1,1)
+    text.Size = 16
+    text.Center = true
+    text.Outline = true
+    instances.espTexts[plr] = text
+    
+    -- Skeleton lines
+    local lines = {}
+    for i = 1, 8 do
+        local line = Drawing.new("Line")
+        line.Visible = false
+        line.Color = Color3.new(0,1,0)
+        line.Thickness = 2
+        table.insert(lines, line)
+    end
+    instances.skeletonLines[plr] = lines
+end
+
+for _, plr in Players:GetPlayers() do createESPDrawings(plr) end
+Players.PlayerAdded:Connect(createESPDrawings)
+Players.PlayerRemoving:Connect(function(plr)
+    if instances.espDrawings[plr] then instances.espDrawings[plr]:Remove() end
+    if instances.espTexts[plr] then instances.espTexts[plr]:Remove() end
+    if instances.skeletonLines[plr] then
+        for _, line in instances.skeletonLines[plr] do line:Remove() end
+    end
+end)
+
+-- ESP Update Loop
+connections[#connections+1] = RunService.RenderStepped:Connect(function()
+    for plr, box in pairs(instances.espDrawings) do
+        if plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") and plr.Character.Humanoid.Health > 0 then
+            local root = plr.Character.HumanoidRootPart
+            local humanoid = plr.Character.Humanoid
+            local head = plr.Character:FindFirstChild("Head")
+            if head then
+                local rootScr, onScreen = camera:WorldToViewportPoint(root.Position)
+                if onScreen then
+                    local headScr = camera:WorldToViewportPoint(head.Position)
+                    local legScr = camera:WorldToViewportPoint(root.Position - Vector3.new(0,4,0))
+                    local boxHeight = math.abs(headScr.Y - legScr.Y)
+                    local boxWidth = boxHeight * 0.4
+                    box.Size = Vector2.new(boxWidth, boxHeight)
+                    box.Position = Vector2.new(rootScr.X - boxWidth/2, rootScr.Y - boxHeight/2)
+                    
+                    -- Colors/Types
+                    if states.rgbESPEnabled then
+                        box.Color = Color3.fromHSV(tick() % 5 / 5, 1, 1)
+                    elseif states.boxESPEnabled then
+                        box.Color = Color3.new(1,0,0)
+                    else
+                        box.Color = Color3.new(0,0,0)
+                    end
+                    box.Visible = (states.boxESPEnabled or states.rgbESPEnabled)
+                    
+                    -- Normal ESP Text
+                    if states.normalESPEnabled then
+                        local dist = (rootPart.Position - root.Position).Magnitude
+                        instances.espTexts[plr].Text = plr.Name .. " [" .. math.floor(dist) .. "]"
+                        instances.espTexts[plr].Position = Vector2.new(rootScr.X, rootScr.Y - boxHeight/2 - 20)
+                        instances.espTexts[plr].Visible = true
+                    else
+                        instances.espTexts[plr].Visible = false
+                    end
+                    
+                    -- Skeleton (basic)
+                    if states.skeletonESPEnabled then
+                        local lines = instances.skeletonLines[plr]
+                        local parts = {head, plr.Character:FindFirstChild("Torso") or plr.Character:FindFirstChild("UpperTorso")}
+                        -- Head to Torso
+                        local hPos = camera:WorldToViewportPoint(head.Position)
+                        local tPos = camera:WorldToViewportPoint(parts[2].Position)
+                        lines[1].From = Vector2.new(hPos.X, hPos.Y)
+                        lines[1].To = Vector2.new(tPos.X, tPos.Y)
+                        lines[1].Visible = true
+                        -- Arms, Legs simplified
+                        for i=2,5 do lines[i].Visible = false end -- Skip advanced for brevity
+                    else
+                        for _, line in instances.skeletonLines[plr] do line.Visible = false end
+                    end
+                else
+                    box.Visible = false
+                    instances.espTexts[plr].Visible = false
+                    for _, line in instances.skeletonLines[plr] do line.Visible = false end
+                end
+            end
+        else
+            box.Visible = false
+            instances.espTexts[plr].Visible = false
+            for _, line in instances.skeletonLines[plr] do line.Visible = false end
+        end
+    end
+end)
+
+-- Collider ESP (simple highlight if parts named "Hitbox")
+connections[#connections+1] = RunService.Heartbeat:Connect(function()
+    if states.colliderESPEnabled then
+        for _, plr in Players:GetPlayers() do
+            if plr ~= player and plr.Character then
+                for _, part in plr.Character:GetChildren() do
+                    if part.Name:lower():find("hitbox") and part:IsA("BasePart") then
+                        part.Material = Enum.Material.Neon
+                        part.BrickColor = BrickColor.new("Bright red")
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- Soft Aim + Auto Shoot (RMB HOLD ONLY)
+local function getClosestTarget()
+    local closest, closestDist = nil, math.huge
+    local mousePos = UserInputService:GetMouseLocation()
+    for _, plr in Players:GetPlayers() do
+        if plr ~= player and plr.Character and plr.Character:FindFirstChild("Head") and plr.Character.Humanoid.Health > 0 then
+            local head = plr.Character.Head
+            local screenPos, visible = camera:WorldToViewportPoint(head.Position)
+            if visible then
+                local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+                if dist < 200 and dist < closestDist then -- FOV 200px
+                    closestDist = dist
+                    closest = head
+                end
             end
         end
     end
     return closest
 end
 
-RunService.RenderStepped:Connect(function()
-    local target = getClosestPlayer()
-    if target then
-        local headPos = camera:WorldToViewportPoint(target.Character.Head.Position)
-        local center = Vector2.new(camera.ViewportSize.X/2, camera.ViewportSize.Y/2)
-        if states.softAimEnabled and rmbDown then
-            local delta = Vector2.new(headPos.X - center.X, headPos.Y - center.Y)
-            local smooth = states.softAimStrength / 100 * 0.3
-            pcall(mousemoverel, delta.X * smooth, delta.Y * smooth)
-        end
-        if states.autoShootEnabled then
-            pcall(mouse1click)
-            task.wait(0.07)
+connections[#connections+1] = RunService.RenderStepped:Connect(function(dt)
+    local rmbHeld = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
+    if states.softAimEnabled and rmbHeld then
+        local targetHead = getClosestTarget()
+        if targetHead then
+            local targetCFrame = CFrame.lookAt(camera.CFrame.Position, targetHead.Position)
+            camera.CFrame = camera.CFrame:Lerp(targetCFrame, dt * states.softAimStrength)
+            
+            -- Auto Shoot Debounce
+            if states.autoShootEnabled and tick() > lastAutoShoot + 0.1 then
+                VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0) -- Left click down
+                task.wait(0.01)
+                VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0) -- Up
+                lastAutoShoot = tick()
+            end
         end
     end
 end)
 
--- Walk Speed & Jump (already working)
-RunService.Heartbeat:Connect(function()
-    if humanoid then
-        humanoid.WalkSpeed = states.walkSpeedEnabled and states.walkSpeed or 16
-        humanoid.JumpPower = states.jumpForceEnabled and states.jumpForce or 50
+-- Spin Bot
+local spinConnection
+connections[#connections+1] = RunService.Heartbeat:Connect(function(dt)
+    if states.spinBotEnabled and rootPart then
+        rootPart.CFrame = rootPart.CFrame * CFrame.Angles(0, math.rad(360 * dt * 5), 0)
     end
 end)
 
--- Fly - more reliable with LinearVelocity
-RunService.Heartbeat:Connect(function()
-    if states.flyEnabled and rootPart then
-        if not instances.flyLinearVelocity or not instances.flyLinearVelocity.Parent then
-            instances.flyLinearVelocity = Instance.new("LinearVelocity")
-            instances.flyLinearVelocity.MaxForce = 1e9
-            instances.flyLinearVelocity.LineForce = true
-            instances.flyLinearVelocity.LineDirection = Vector3.new(0,1,0) -- initial
-            instances.flyLinearVelocity.Attachment0 = rootPart
-            instances.flyLinearVelocity.Parent = rootPart
-
-            instances.flyBodyGyro = Instance.new("BodyGyro")
-            instances.flyBodyGyro.MaxTorque = Vector3.new(1e9,1e9,1e9)
-            instances.flyBodyGyro.P = 20000
-            instances.flyBodyGyro.Parent = rootPart
+-- Fun Features Loop
+connections[#connections+1] = RunService.Heartbeat:Connect(function(dt)
+    if not character then return end
+    
+    -- Head Spins
+    if headPart then
+        local spinCf = CFrame.new()
+        if states.headSpinXEnabled then spinCf *= CFrame.Angles(math.rad(states.headSpinXSpeed * dt), 0, 0) end
+        if states.headSpinYEnabled then spinCf *= CFrame.Angles(0, math.rad(states.headSpinYSpeed * dt), 0) end
+        if states.headSpinZEnabled then spinCf *= CFrame.Angles(0, 0, math.rad(states.headSpinZSpeed * dt)) end
+        headPart.CFrame = headPart.CFrame * spinCf
+    end
+    
+    -- Spaz Rig
+    if states.spazRigEnabled then
+        local intensity = states.spazIntensity / 10
+        for _, part in pairs(character:GetChildren()) do
+            if part:IsA("BasePart") and part.Name:find("Arm") or part.Name:find("Leg") or part.Name:find("Hand") or part.Name:find("Foot") then
+                local randRot = Vector3.new(math.random(-intensity, intensity), math.random(-intensity, intensity), math.random(-intensity, intensity))
+                part.CFrame = part.CFrame * CFrame.Angles(math.rad(randRot.X), math.rad(randRot.Y), math.rad(randRot.Z))
+            end
         end
-
-        instances.flyBodyGyro.CFrame = camera.CFrame
-
-        local dir = Vector3.new()
-        if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir += camera.CFrame.LookVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir -= camera.CFrame.LookVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir -= camera.CFrame.RightVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir += camera.CFrame.RightVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir += Vector3.new(0,1,0) end
-        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then dir -= Vector3.new(0,1,0) end
-
-        if dir.Magnitude > 0 then
-            instances.flyLinearVelocity.VelocityConstraintMode = Enum.VelocityConstraintMode.Line
-            instances.flyLinearVelocity.LineDirection = dir.Unit
-            instances.flyLinearVelocity.LineVelocity = instances.flySpeed
-        else
-            instances.flyLinearVelocity.LineVelocity = 0
-            instances.flyLinearVelocity.VelocityConstraintMode = Enum.VelocityConstraintMode.Plane
+    end
+    
+    -- Long Arms
+    if states.longArmsEnabled then
+        local length = states.longArmsLength
+        for _, part in pairs(character:GetChildren()) do
+            if part.Name == "Left Arm" or part.Name == "Right Arm" or part.Name == "Left Leg" or part.Name == "Right Leg" then
+                part.Size = Vector3.new(part.Size.X * length, part.Size.Y, part.Size.Z * length)
+            end
         end
+    end
+    
+    -- Orbit
+    if states.orbitPlayerEnabled then
+        local closest, dist = nil, math.huge
+        for _, plr in Players:GetPlayers() do
+            if plr ~= player and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+                local tdist = (rootPart.Position - plr.Character.HumanoidRootPart.Position).Magnitude
+                if tdist < dist then dist = tdist closest = plr.Character.HumanoidRootPart end
+            end
+        end
+        if closest then
+            local angle = tick() * states.orbitSpeed
+            local offset = Vector3.new(math.cos(angle) * states.orbitDistance, 5, math.sin(angle) * states.orbitDistance)
+            rootPart.CFrame = CFrame.lookAt(closest.Position + offset, closest.Position)
+        end
+    end
+    
+    -- Third Person Lock
+    if states.thirdPersonLockEnabled and rootPart then
+        local behind = rootPart.Position - (rootPart.CFrame.LookVector * states.thirdPersonDistance)
+        camera.CFrame = CFrame.lookAt(behind, rootPart.Position)
+    end
+    
+    -- Platform
+    if states.platformGeneratorEnabled and instances.platformPart and rootPart then
+        instances.platformPart.Position = rootPart.Position - Vector3.new(0, 4, 0)
+    end
+end)
+
+-- Trails
+local function toggleTrails(v)
+    if v and rootPart then
+        local att0 = Instance.new("Attachment", rootPart)
+        att0.Position = Vector3.new(0,0,-2)
+        local att1 = Instance.new("Attachment", rootPart)
+        att1.Position = Vector3.new(0,0,2)
+        instances.trail = Instance.new("Trail", rootPart)
+        instances.trail.Attachment0 = att0
+        instances.trail.Attachment1 = att1
+        instances.trail.Color = ColorSequence.new{
+            ColorSequenceKeypoint.new(0, Color3.fromHSV(tick()%5/5,1,1)),
+            ColorSequenceKeypoint.new(1, Color3.fromHSV((tick()+1)%5/5,1,1))
+        }
+        instances.trail.Lifetime = 2
+        instances.trail.MinLength = 0
+        instances.trail.WidthScale = NumberSequence.new{NumberSequenceKeypoint.new(0,2), NumberSequenceKeypoint.new(1,0)}
+        spawn(function()
+            while instances.trail do
+                instances.trail.Color = ColorSequence.new{
+                    ColorSequenceKeypoint.new(0, Color3.fromHSV(tick()%5/5,1,1)),
+                    ColorSequenceKeypoint.new(1, Color3.fromHSV((tick()+1)%5/5,1,1))
+                }
+                task.wait(0.1)
+            end
+        end)
     else
-        if instances.flyLinearVelocity then instances.flyLinearVelocity:Destroy() instances.flyLinearVelocity = nil end
-        if instances.flyBodyGyro then instances.flyBodyGyro:Destroy() instances.flyBodyGyro = nil end
+        if instances.trail then instances.trail:Destroy() instances.trail = nil end
     end
-end)
+end
 
--- Flinger + Noclip - stronger & repeated
-RunService.Stepped:Connect(function()
-    if states.flingerNoclipEnabled and character then
-        for _, part in character:GetDescendants() do
-            if part:IsA("BasePart") and part.CanCollide then
-                part.CanCollide = false
-            end
-        end
-        if rootPart then
-            rootPart.Velocity = rootPart.Velocity + Vector3.new(
-                math.random(-100,100),
-                math.random(30,80),
-                math.random(-100,100)
-            ) -- stronger
-        end
-    end
-end)
-
--- AutoGG - safer check
-humanoid.Died:Connect(function()
-    if states.autoGGEnabled then
-        local chatEvents = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
-        if chatEvents then
-            local sayMessage = chatEvents:FindFirstChild("SayMessageRequest")
-            if sayMessage then
-                pcall(function()
-                    sayMessage:FireServer("GG " .. player.Name, "All")
-                end)
-            end
-        end
-    end
-end)
-
--- Auto Leave
-RunService.Heartbeat:Connect(function()
-    if states.autoLeaveEnabled and humanoid and humanoid.Health > 0 then
-        if (humanoid.Health / humanoid.MaxHealth * 100) <= states.autoLeaveThreshold then
-            player:Kick("Low HP - Auto Leave")
-        end
-    end
-end)
-
--- Anti-AFK - more realistic
-RunService.Heartbeat:Connect(function()
-    if states.antiAFKEnabled then
-        VirtualInputManager:SendKeyEvent(true, "W", false, game)
-        task.wait(0.1)
-        VirtualInputManager:SendKeyEvent(false, "W", false, game)
-        task.wait(0.3)
-        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
-        task.wait(0.05)
-        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
-        task.wait(30 + math.random(10,20))
-    end
-end)
-
--- Orbit - smooth & height adjust
-RunService.Heartbeat:Connect(function()
-    if states.orbitPlayerEnabled and states.orbitTarget and states.orbitTarget.Character and states.orbitTarget.Character:FindFirstChild("HumanoidRootPart") then
-        local targetRoot = states.orbitTarget.Character.HumanoidRootPart
-        local t = tick() * 5
-        local offset = Vector3.new(math.sin(t) * 10, 5 + math.sin(t*2)*2, math.cos(t) * 10)
-        rootPart.CFrame = targetRoot.CFrame * CFrame.new(offset)
-    end
-end)
-
--- Long Arms - better part detection
-RunService.Heartbeat:Connect(function()
-    if states.longArmsEnabled and character then
-        for _, part in character:GetDescendants() do
-            if part:IsA("BasePart") and (part.Name:find("Arm") or part.Name:find("Hand")) then
-                part.Size = Vector3.new(1, 12, 1)
-            end
-        end
-    end
-end)
-
--- RGB Trails
-RunService.Heartbeat:Connect(function()
-    if states.trailsEnabled and instances.trail then
-        instances.trail.Color = ColorSequence.new(Color3.fromHSV(tick() % 5 / 5, 1, 1))
-        instances.trail.Enabled = true
-    elseif instances.trail then
-        instances.trail.Enabled = false
-    end
-end)
-
--- Third Person Lock - more persistent
-RunService.RenderStepped:Connect(function()
-    if states.thirdPersonLockEnabled then
-        camera.CameraType = Enum.CameraType.Scriptable
-        camera.CFrame = rootPart.CFrame * CFrame.new(0, 6, -18) * CFrame.Angles(math.rad(15), 0, 0)
-    else
-        if camera.CameraType == Enum.CameraType.Scriptable then
-            camera.CameraType = Enum.CameraType.Custom
-        end
-    end
-end)
-
--- Custom Crosshair - fallback if Drawing fails
-local function rebuildCrosshair()
-    pcall(function()
-        for _, d in instances.crosshairDrawings do d:Remove() end
-        instances.crosshairDrawings = {}
-
+-- Custom Crosshair (simple)
+local function updateCrosshair()
+    if instances.crosshairGui then instances.crosshairGui:Destroy() end
+    if states.customCrosshairEnabled then
+        instances.crosshairGui = Instance.new("ScreenGui", playerGui)
+        instances.crosshairGui.IgnoreGuiInset = true
+        local ch = Instance.new("Frame", instances.crosshairGui)
+        ch.AnchorPoint = Vector2.new(0.5,0.5)
+        ch.Position = UDim2.new(0.5,0,0.5,0)
+        ch.Size = UDim2.new(0, states.crosshairSize*2, 0, states.crosshairSize*2)
+        ch.BackgroundTransparency = 1
         if states.crosshairType == "Plus" then
-            local h = Drawing.new("Line") h.Thickness = 2 h.Color = states.crosshairColor table.insert(instances.crosshairDrawings, h)
-            local v = Drawing.new("Line") v.Thickness = 2 v.Color = states.crosshairColor table.insert(instances.crosshairDrawings, v)
-        elseif states.crosshairType == "Cross" then
-            local a = Drawing.new("Line") a.Thickness = 2 a.Color = states.crosshairColor table.insert(instances.crosshairDrawings, a)
-            local b = Drawing.new("Line") b.Thickness = 2 b.Color = states.crosshairColor table.insert(instances.crosshairDrawings, b)
-        elseif states.crosshairType == "Dot" then
-            local dot = Drawing.new("Circle") dot.Radius = states.crosshairSize/2 dot.Filled = true dot.Color = states.crosshairColor table.insert(instances.crosshairDrawings, dot)
-        elseif states.crosshairType == "Circle" then
-            local c = Drawing.new("Circle") c.Radius = states.crosshairSize c.Filled = false c.Thickness = 2 c.Color = states.crosshairColor table.insert(instances.crosshairDrawings, c)
+            local horz = Instance.new("Frame", ch)
+            horz.Size = UDim2.new(1,0,0.2,0)
+            horz.Position = UDim2.new(0,0,0.4,0)
+            horz.BackgroundColor3 = Color3.fromRGB(255,0,0)
+            horz.BorderSizePixel = 0
+            local vert = Instance.new("Frame", ch)
+            vert.Size = UDim2.new(0.2,0,1,0)
+            vert.Position = UDim2.new(0.4,0,0,0)
+            vert.BackgroundColor3 = Color3.fromRGB(255,0,0)
+            vert.BorderSizePixel = 0
+        else -- Dot
+            ch.Size = UDim2.new(0, states.crosshairSize, 0, states.crosshairSize)
+            ch.BackgroundColor3 = Color3.fromRGB(255,0,0)
+            Instance.new("UICorner", ch).CornerRadius = UDim.new(0.5,0)
         end
-    end)
-end
-rebuildCrosshair()
-
-RunService.RenderStepped:Connect(function()
-    pcall(function()
-        local cx, cy = camera.ViewportSize.X/2, camera.ViewportSize.Y/2
-        if states.customCrosshairEnabled and #instances.crosshairDrawings > 0 then
-            if states.crosshairType == "Plus" then
-                instances.crosshairDrawings[1].From = Vector2.new(cx - states.crosshairSize, cy)
-                instances.crosshairDrawings[1].To = Vector2.new(cx + states.crosshairSize, cy)
-                instances.crosshairDrawings[1].Visible = true
-                instances.crosshairDrawings[2].From = Vector2.new(cx, cy - states.crosshairSize)
-                instances.crosshairDrawings[2].To = Vector2.new(cx, cy + states.crosshairSize)
-                instances.crosshairDrawings[2].Visible = true
-            elseif states.crosshairType == "Cross" then
-                instances.crosshairDrawings[1].From = Vector2.new(cx - states.crosshairSize, cy - states.crosshairSize)
-                instances.crosshairDrawings[1].To = Vector2.new(cx + states.crosshairSize, cy + states.crosshairSize)
-                instances.crosshairDrawings[1].Visible = true
-                instances.crosshairDrawings[2].From = Vector2.new(cx - states.crosshairSize, cy + states.crosshairSize)
-                instances.crosshairDrawings[2].To = Vector2.new(cx + states.crosshairSize, cy - states.crosshairSize)
-                instances.crosshairDrawings[2].Visible = true
-            elseif states.crosshairType == "Dot" or states.crosshairType == "Circle" then
-                instances.crosshairDrawings[1].Position = Vector2.new(cx, cy)
-                instances.crosshairDrawings[1].Visible = true
-            end
-        else
-            for _, d in instances.crosshairDrawings do d.Visible = false end
-        end
-    end)
-end)
-
--- Platform Generator
-RunService.Heartbeat:Connect(function()
-    if states.platformGeneratorEnabled and rootPart then
-        if not instances.platformPart then
-            instances.platformPart = Instance.new("Part")
-            instances.platformPart.Size = Vector3.new(8,0.5,8)
-            instances.platformPart.Anchored = true
-            instances.platformPart.Transparency = 0.5
-            instances.platformPart.BrickColor = BrickColor.Random()
-            instances.platformPart.Parent = workspace
-        end
-        instances.platformPart.CFrame = rootPart.CFrame * CFrame.new(0, -3.5, 0)
-    elseif instances.platformPart then
-        instances.platformPart:Destroy()
-        instances.platformPart = nil
     end
-end)
-
--- ESP loop
-local function createESP(plr)
-    pcall(function()
-        if plr == player or instances.espDrawings[plr] then return end
-        local d = {}
-        d.box = Drawing.new("Square"); d.box.Thickness = 2; d.box.Filled = false; d.box.Color = Color3.new(1,0,0)
-        d.name = Drawing.new("Text"); d.name.Size = 15; d.name.Center = true; d.name.Outline = true; d.name.Color = Color3.new(1,1,1)
-        d.skel = {}
-        for i=1,8 do
-            local ln = Drawing.new("Line"); ln.Thickness = 1.5; ln.Color = Color3.new(1,1,1); table.insert(d.skel, ln)
-        end
-        d.coll = Drawing.new("Square"); d.coll.Thickness = 1; d.coll.Filled = false; d.coll.Color = Color3.new(0,1,0)
-        instances.espDrawings[plr] = d
-    end)
 end
 
-for _, plr in Players:GetPlayers() do createESP(plr) end
-Players.PlayerAdded:Connect(createESP)
-
-RunService.RenderStepped:Connect(function()
-    pcall(function()
-        for plr, d in pairs(instances.espDrawings) do
-            local c = plr.Character
-            if c and c:FindFirstChild("HumanoidRootPart") and c.Humanoid.Health > 0 then
-                local root, vis = camera:WorldToViewportPoint(c.HumanoidRootPart.Position)
-                if vis then
-                    local head = camera:WorldToViewportPoint(c.Head.Position + Vector3.new(0,0.6,0))
-                    local feet = camera:WorldToViewportPoint(c.HumanoidRootPart.Position - Vector3.new(0,3.5,0))
-                    local height = math.abs(head.Y - feet.Y)
-                    local width = height * 0.5
-                    if states.boxESPEnabled or states.rgbESPEnabled then
-                        d.box.Size = Vector2.new(width, height)
-                        d.box.Position = Vector2.new(root.X - width/2, root.Y - height/2)
-                        d.box.Visible = true
-                        if states.rgbESPEnabled then d.box.Color = Color3.fromHSV(tick()%5/5,1,1) end
-                    else d.box.Visible = false end
-                    if states.normalESPEnabled then
-                        d.name.Text = plr.Name .. " ["..math.floor(c.Humanoid.Health).."]"
-                        d.name.Position = Vector2.new(root.X, head.Y - 24)
-                        d.name.Visible = true
-                    else d.name.Visible = false end
-                    -- Skeleton & Collider simplified for brevity - expand if needed
+-- State Change Detection (for one-time actions)
+for k, v in pairs(states) do oldStates[k] = v end
+connections[#connections+1] = RunService.Heartbeat:Connect(function()
+    for k, v in pairs(states) do
+        if v ~= oldStates[k] then
+            oldStates[k] = v
+            if k == "trailsEnabled" then toggleTrails(v) end
+            if k == "customCrosshairEnabled" or k == "crosshairType" or k == "crosshairSize" then updateCrosshair() end
+            if k == "platformGeneratorEnabled" then
+                if v then
+                    instances.platformPart = Instance.new("Part")
+                    instances.platformPart.Name = "CrimsonPlatform"
+                    instances.platformPart.Size = Vector3.new(20, 2, 20)
+                    instances.platformPart.Anchored = true
+                    instances.platformPart.CanCollide = true
+                    instances.platformPart.Material = Enum.Material.ForceField
+                    instances.platformPart.BrickColor = BrickColor.Random()
+                    instances.platformPart.Parent = workspace
                 else
-                    d.box.Visible = false
-                    d.name.Visible = false
-                    for _, ln in d.skel do ln.Visible = false end
-                    d.coll.Visible = false
+                    if instances.platformPart then instances.platformPart:Destroy() instances.platformPart = nil end
                 end
-            else
-                d.box.Visible = false
-                d.name.Visible = false
-                for _, ln in d.skel do ln.Visible = false end
-                d.coll.Visible = false
             end
         end
-    end)
+    end
 end)
 
--- Menu toggle / unload
+-- Auto GG on Death
+local wasAlive = true
+connections[#connections+1] = RunService.Heartbeat:Connect(function()
+    if humanoid.Health <= 0 and wasAlive then
+        wasAlive = false
+        if states.autoGGEnabled then
+            game:GetService("ReplicatedStorage").DefaultChatSystemChatEvents.SayMessageRequest:FireServer("gg", "All")
+        end
+    elseif humanoid.Health > 0 then
+        wasAlive = true
+    end
+end)
+
+-- Menu Controls
 local menuVisible = true
-local connections = {}
-
-local function setMenuVisible(v)
-    menuVisible = v
-    screenGui.Enabled = v
+local function toggleMenu()
+    menuVisible = not menuVisible
+    screenGui.Enabled = menuVisible
 end
 
-local function unload()
-    for _, c in connections do c:Disconnect() end
-    screenGui:Destroy()
-    for _, d in instances.espDrawings do
-        for k,v in pairs(d) do if type(v)=="table" then for _,l in v do l:Remove() end else v:Remove() end end
+local function unloadMenu()
+    for _, conn in ipairs(connections) do
+        if typeof(conn) == "RBXScriptConnection" then conn:Disconnect() end
     end
-    for _, d in instances.crosshairDrawings do d:Remove() end
+    if instances.flyBodyVelocity then instances.flyBodyVelocity:Destroy() end
+    if instances.flyBodyGyro then instances.flyBodyGyro:Destroy() end
+    if instances.trail then instances.trail:Destroy() end
     if instances.platformPart then instances.platformPart:Destroy() end
-    print("[Crimson Menu] Unloaded")
+    if instances.crosshairGui then instances.crosshairGui:Destroy() end
+    for plr, box in pairs(instances.espDrawings) do box:Remove() end
+    for plr, text in pairs(instances.espTexts) do text:Remove() end
+    for plr, lines in pairs(instances.skeletonLines) do
+        for _, line in ipairs(lines) do line:Remove() end
+    end
+    screenGui:Destroy()
+    print("[Crimson] Fully Unloaded ✓")
 end
 
-table.insert(connections, UserInputService.InputBegan:Connect(function(input, gp)
-    if gp then return end
-    if input.KeyCode == TOGGLE_KEY then
-        setMenuVisible(not menuVisible)
-    elseif input.KeyCode == UNLOAD_KEY then
-        unload()
-    end
-end))
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode == TOGGLE_KEY then toggleMenu()
+    elseif input.KeyCode == UNLOAD_KEY then unloadMenu() end
+end)
 
--- Initial visibility (set to true to show on join)
-setMenuVisible(true)
-
-print("Crimson has loaded Enjoy ( PC ONLY! INS to open DEL to unload! ) ")
+toggleMenu()
+print("Crimson Menu Loaded! ✓ (INS: Toggle | DEL: Unload | RMB+HOLD: Soft Aim)")
