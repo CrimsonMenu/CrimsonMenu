@@ -25,8 +25,8 @@ local camera = workspace.CurrentCamera
 
 -- CONFIG
 local MENU_NAME = "CrimsonMenu"
-local TOGGLE_KEY = Enum.KeyCode.Insert
-local UNLOAD_KEY = Enum.KeyCode.Delete
+local TOGGLE_KEY = Enum.KeyCode.L
+local UNLOAD_KEY = Enum.KeyCode.N
 
 -- Cleanup old menu
 if playerGui:FindFirstChild(MENU_NAME) then playerGui[MENU_NAME]:Destroy() end
