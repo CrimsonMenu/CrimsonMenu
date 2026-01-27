@@ -94,7 +94,7 @@
 	mainFrame.BackgroundColor3 = Color3.fromRGB(15,15,15)
 	mainFrame.BorderSizePixel = 0
 	mainFrame.Active = true
-	mainFrame.Draggable = false
+	mainFrame.Draggable = true
 	mainFrame.ZIndex = 100
 	mainFrame.Parent = screenGui
 	Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0,8)
@@ -116,7 +116,7 @@
 	titleLabel.Font = Enum.Font.GothamBold
 	titleLabel.TextSize = 18
 	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-	titleLabel.TextColor3 = Color3.fromRGB(220,60,80)
+	titleLabel.TextColor3 = Color3.fromRGB(133, 56, 12)
 	
 	local tabsFrame = Instance.new("Frame", mainFrame)
 	tabsFrame.Size = UDim2.new(1,0,0,30)
