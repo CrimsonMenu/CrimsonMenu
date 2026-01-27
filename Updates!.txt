@@ -4,7 +4,6 @@
  * Updated the Soft-Aim ( from 1 - 100 )
  * Made The Open Menu Key L ( for people on laptops )
  * Made The Delete Menu Key M ( For people on laptops )
- * Menu Can Now Not Be Dragged ( had to disable this because It was glitchy in some parts )
  <--------------->
  Other News
  <--------------->
