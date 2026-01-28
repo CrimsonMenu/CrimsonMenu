@@ -304,7 +304,7 @@
 	-- Tabs
 	local tabs = {}
 	local pages = {}
-	local tabNames = {"Combat", "ESP", "Movement", "Auto", "Fun", "Misc", "Credits"}
+	local tabNames = {"Combat", "ESP", "Movement", "Automation", "Fun", "Misc", "Credits"}
 	for _, tabName in ipairs(tabNames) do
 	    tabs[tabName] = createTabButton(tabName)
 	    pages[tabName] = createPage(tabName)
@@ -357,12 +357,12 @@
 	end
 	
 	do -- Automation
-	    createSectionLabel("Auto", pages.Automation)
-	    createToggle("Auto GG (on death)", pages.Automation, false, function(v) states.autoGGEnabled = v end)
+	    createSectionLabel("Auto", pages.Auto)
+	    createToggle("Auto GG (on death)", pages.Auto, false, function(v) states.autoGGEnabled = v end)
 	    createButton("Manual GG", pages.Automation, function() game:GetService("ReplicatedStorage").DefaultChatSystemChatEvents.SayMessageRequest:FireServer("gg", "All") end)
-	    createToggle("Auto Leave (low players)", pages.Automation, false, function(v) states.autoLeaveEnabled = v end)
-	    createSlider("Player Threshold", pages.Automation, 1, 30, 15, function(v) states.autoLeaveThreshold = v end)
-	    createToggle("Anti AFK", pages.Automation, false, function(v) states.antiAFKEnabled = v end)
+	    createToggle("Auto Leave (low players)", pages.Auto, false, function(v) states.autoLeaveEnabled = v end)
+	    createSlider("Player Threshold", pages.Auto, 1, 30, 15, function(v) states.autoLeaveThreshold = v end)
+	    createToggle("Anti AFK", pages.Auto, false, function(v) states.antiAFKEnabled = v end)
 	end
 	
 	do -- Fun (NEW FEATURES)
