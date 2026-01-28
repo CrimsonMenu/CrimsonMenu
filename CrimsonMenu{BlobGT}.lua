@@ -304,7 +304,7 @@
 	-- Tabs
 	local tabs = {}
 	local pages = {}
-	local tabNames = {"Combat", "ESP", "Movement", "Automation", "Fun", "Misc", "Credits"}
+	local tabNames = {"Combat", "ESP", "Movement", "Auto", "Fun", "Misc", "Credits"}
 	for _, tabName in ipairs(tabNames) do
 	    tabs[tabName] = createTabButton(tabName)
 	    pages[tabName] = createPage(tabName)
